@@ -76,4 +76,4 @@ const handler = async (request: Request): Promise<Response> => {
   });
 };
 
-await serve(handler, { port });
+export default await serve(handler, { port });
