@@ -3,7 +3,7 @@
     "builds": [
         {
             "src": "deno.ts",
-            "use": "@vercel/deno"
+            "use": "vercel-deno"
         }
     ],
     "routes": [
