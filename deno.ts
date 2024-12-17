@@ -38,7 +38,7 @@ const handler = async (request: Request): Promise<Response> => {
   url.port = '443';
   url.searchParams.delete('__host');
 
-  const encodedHeaders = url.searchParams.get('__headers') || '';
+  const encodedHeaders = url.searchParams.get('__headers') || null;
   let decodedHeaders: HeadersInit = {};
   if (encodedHeaders) {
     try {
