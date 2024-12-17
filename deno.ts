@@ -39,7 +39,14 @@ const handler = async (request: Request): Promise<Response> => {
   url.searchParams.delete('__host');
 
   const encodedHeaders = url.searchParams.get('__headers') || '';
-  const decodedHeaders = JSON.parse(atob(encodedHeaders));
+  let decodedHeaders: HeadersInit = {};
+  if (encodedHeaders) {
+    try {
+      decodedHeaders = JSON.parse(atob(encodedHeaders));
+    } catch (e) {
+      console.error('Invalid base64 string:', encodedHeaders);
+    }
+  }
   const request_headers = new Headers(decodedHeaders);
 
   copyHeader('range', request_headers, request.headers);
