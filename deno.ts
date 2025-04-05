@@ -1,6 +1,27 @@
-import { serve } from 'https://deno.land/std@0.148.0/http/server.ts';
+import { serve } from "https://deno.land/std@0.148.0/http/server.ts";
 
-const port = 8090;
+const port = 8080;
+
+const ALLOWED_HEADERS = [
+  "Origin",
+  "X-Requested-With",
+  "Content-Type",
+  "Accept",
+  "Authorization",
+  "x-goog-visitor-id",
+  "x-goog-api-key",
+  "x-origin",
+  "x-youtube-client-version",
+  "x-youtube-client-name",
+  "x-goog-api-format-version",
+  "x-goog-authuser",
+  "x-user-agent",
+  "Accept-Language",
+  "X-Goog-FieldMask",
+  "Range",
+  "Referer",
+  "Cookie",
+].join(", ");
 
 function copyHeader(headerName: string, to: Headers, from: Headers) {
   const hdrVal = from.get(headerName);
@@ -10,77 +31,106 @@ function copyHeader(headerName: string, to: Headers, from: Headers) {
 }
 
 const handler = async (request: Request): Promise<Response> => {
-  if (request.method === 'OPTIONS') {
-    const response = new Response('', {
+  const origin = request.headers.get("origin") || "";
+
+  request.headers.forEach((value, key) => {
+    console.log(key, value);
+  });
+
+  // If options send do CORS preflight
+  if (request.method === "OPTIONS") {
+    const response = new Response("", {
       status: 200,
       headers: new Headers({
-        'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
-        'Access-Control-Allow-Methods': '*',
-        'Access-Control-Allow-Headers':
-          'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-goog-visitor-id, x-goog-api-key, x-origin, x-youtube-client-version, x-youtube-client-name, x-goog-api-format-version, x-user-agent, Accept-Language, Range, Referer',
-        'Access-Control-Max-Age': '86400',
-        'Access-Control-Allow-Credentials': 'true'
-      })
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": ALLOWED_HEADERS,
+        "Access-Control-Max-Age": "86400",
+        "Access-Control-Allow-Credentials": "true",
+      }),
     });
     return response;
   }
 
-  const url = new URL(request.url, 'http://localhost/');
-  if (!url.searchParams.has('__host')) {
+  const url = new URL(request.url, "http://localhost/");
+  if (!url.searchParams.has("__host")) {
     return new Response(
-      'Request is formatted incorrectly. Please include __host in the query string.',
-      { status: 400 }
+      "Request is formatted incorrectly. Please include __host in the query string.",
+      { status: 400 },
     );
   }
 
-  url.host = url.searchParams.get('__host')!;
-  url.protocol = 'https';
-  url.port = '443';
-  url.searchParams.delete('__host');
+  // Set the URL host to the __host parameter
+  url.host = url.searchParams.get("__host")!;
+  url.protocol = "https";
+  url.port = "443";
+  url.searchParams.delete("__host");
 
-  const encodedHeaders = url.searchParams.get('__headers') || null;
-  let decodedHeaders: HeadersInit = {};
-  if (encodedHeaders) {
+  // Copy headers from the request to the new request
+  const headersBase64 = url.searchParams.get("__headers");
+  let parsedHeaders = {};
+  if (headersBase64) {
     try {
-      decodedHeaders = JSON.parse(atob(encodedHeaders));
+      // Try decoding as Base64 and parsing as JSON
+      parsedHeaders = JSON.parse(atob(headersBase64));
     } catch (e) {
-      console.error('Invalid base64 string:', encodedHeaders);
+      // If decoding fails, assume it's plain JSON
+      try {
+        parsedHeaders = JSON.parse(headersBase64);
+      } catch (e) {
+        return new Response(
+          "Request is formatted incorrectly. The __headers query must be formatted as JSON or Base64.",
+          { status: 400 },
+        );
+      }
     }
   }
-  const request_headers = new Headers(decodedHeaders);
+  const request_headers = new Headers(parsedHeaders);
+  copyHeader("range", request_headers, request.headers);
 
-  copyHeader('range', request_headers, request.headers);
+  if (!request_headers.has("user-agent")) {
+    copyHeader("user-agent", request_headers, request.headers);
+  }
 
-  if (!request_headers.has('user-agent'))
-    copyHeader('user-agent', request_headers, request.headers);
+  url.searchParams.delete("__headers");
 
-  url.searchParams.delete('__headers');
+  if (url.host.includes("youtube")) {
+    request_headers.set("origin", "https://www.youtube.com");
+    request_headers.set("referer", "https://www.youtube.com/");
+  }
+
+  if (request.headers.has("Authorization")) {
+    request_headers.set("Authorization", request.headers.get("Authorization")!);
+  }
 
   const fetchRes = await fetch(url, {
     method: request.method,
     headers: request_headers,
-    body: request.body
+    body: request.body,
+    credentials: "same-origin",
   });
 
+  // Construct the return headers
   const headers = new Headers();
-  copyHeader('content-length', headers, fetchRes.headers);
-  copyHeader('content-type', headers, fetchRes.headers);
-  copyHeader('content-disposition', headers, fetchRes.headers);
-  copyHeader('accept-ranges', headers, fetchRes.headers);
-  copyHeader('content-range', headers, fetchRes.headers);
 
-  headers.set(
-    'Access-Control-Allow-Origin',
-    request.headers.get('origin') || '*'
-  );
-  headers.set('Access-Control-Allow-Headers', '*');
-  headers.set('Access-Control-Allow-Methods', '*');
-  headers.set('Access-Control-Allow-Credentials', 'true');
+  // Copy content headers
+  copyHeader("content-length", headers, fetchRes.headers);
+  copyHeader("content-type", headers, fetchRes.headers);
+  copyHeader("content-disposition", headers, fetchRes.headers);
+  copyHeader("accept-ranges", headers, fetchRes.headers);
+  copyHeader("content-range", headers, fetchRes.headers);
 
+  // Add cors headers
+  headers.set("Access-Control-Allow-Origin", origin);
+  headers.set("Access-Control-Allow-Headers", ALLOWED_HEADERS);
+  headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  headers.set("Access-Control-Allow-Credentials", "true");
+
+  // Return the proxied response
   return new Response(fetchRes.body, {
     status: fetchRes.status,
-    headers: headers
+    headers: headers,
   });
 };
 
-export default await serve(handler, { port });
+await serve(handler, { port });
