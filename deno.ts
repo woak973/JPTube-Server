@@ -69,10 +69,12 @@ const handler = async (request: Request): Promise<Response> => {
     try {
       // Try decoding as Base64 and parsing as JSON
       parsedHeaders = JSON.parse(atob(headersBase64));
+      // deno-lint-ignore no-unused-vars
     } catch (e) {
       // If decoding fails, assume it's plain JSON
       try {
         parsedHeaders = JSON.parse(headersBase64);
+        // deno-lint-ignore no-unused-vars
       } catch (e) {
         return new Response(
           "Request is formatted incorrectly. The __headers query must be formatted as JSON or Base64.",
