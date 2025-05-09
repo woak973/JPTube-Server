@@ -1,5 +1,5 @@
-services: 
- - name: jptube-server
+services:
+  - name: jptube-server
     type: web
     runtime: docker
     repo: https://github.com/woak973/JPTube-Server.git
